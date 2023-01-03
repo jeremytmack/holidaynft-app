@@ -17,89 +17,67 @@ AWS.config.update({
 
 // Lambda Handler
 exports.handler = async (event, context) => {
-  let path = String(event.rawPath);
-  let method = String(event.requestContext.http.method);
-  let routes = {
-    updateImage: "/api/updateimage",
-    getImages: "/api/getimages",
-    mintit: "/api/mintnft",
-  };
+  //console.log("ISSUED GET: ", JSON.stringify(event));
+  const httpMethod = event.httpMethod;
   let statusCode = 400;
-  let body = `User Exists. ${path} === ${routes.mintit}`;
+  let body = `User Exists`;
 
   const headers = {
     "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*", // Required for CORS support to work
+    "Access-Control-Allow-Credentials": true, // Required for cookies, authorization headers with HTTPS
   };
 
-  switch (String(path)) {
-    case String(routes.getImages):
-      if (method === "GET") {
-        await listBucketContents("available")
-          .then((data) => {
-            statusCode = 200;
-            body = JSON.stringify(data);
-          })
-          .catch((err) => {
-            body = JSON.stringify(err);
-            statusCode = 400;
-          });
-      } else {
-        break;
+  if (String(httpMethod) === "GET") {
+    //  if (method === "GET") {
+    await listBucketContents("available")
+      .then((data) => {
+        statusCode = 200;
+        body = JSON.stringify(data);
+      })
+      .catch((err) => {
+        body = JSON.stringify(err);
+        statusCode = 400;
+      });
+  } else if (String(httpMethod) === "POST") {
+    const requestJSON = JSON.parse(event.body);
+    const imagekey = requestJSON.image;
+    const walletAddress = requestJSON.walletId;
+
+    let walletHasBeenUsed = await checkForWalletId(walletAddress).then(
+      function (response) {
+        return response;
       }
-    case String(routes.mintit):
-      console.log("WE MINTING");
-      await mintNft(
-        "https://holidaynft.s3.amazonaws.com/livenft/0x7cb5dfdd7abda52f25c72c1625254799cfb36891.jpg",
-        "0xc410eE4320373300F49c7fc3E607Ab7a259B8400"
-      )
-        .then(function (nftResp) {
-          console.log("NFT SUCCESS!!!", JSON.stringify(nftResp));
+    );
+
+    if (walletHasBeenUsed === false) {
+      let fullImageUrl = await updateBucket(imagekey, walletAddress)
+        .then((nftImageUrl) => {
+          return `https://holidaynft.s3.amazonaws.com/${nftImageUrl}`;
         })
-        .catch(function (err) {
-          console.log("NFT ERROR!!!", JSON.stringify(err.response.data.error));
+        .catch((err) => {
+          return "";
         });
 
-      break;
-    case String(routes.updateImage):
-      if (method === "POST") {
-        const requestJSON = JSON.parse(event.body);
-        const imagekey = requestJSON.image;
-        const walletAddress = requestJSON.walletId;
-
-        let walletHasBeenUsed = await checkForWalletId(walletAddress).then(
-          function (response) {
-            return response;
-          }
-        );
-
-        if (walletHasBeenUsed === false) {
-          let fullImageUrl = await updateBucket(imagekey, walletAddress)
-            .then((nftImageUrl) => {
-              return `https://holidaynft.s3.amazonaws.com/${nftImageUrl}`;
-            })
-            .catch((err) => {
-              return "";
-            });
-
-          if (fullImageUrl.length !== "") {
-            let bodyData = await mintNft(fullImageUrl, walletAddress)
-              .then((nftResp) => {
-                console.log("SUCCESS");
-                statusCode = 200;
-                body = JSON.stringify(nftResp);
-              })
-              .catch((err) => {
-                statusCode = 400;
-                body = JSON.stringify(err);
-              });
-          } else {
+      if (fullImageUrl.length !== "") {
+        let bodyData = await mintNft(fullImageUrl, walletAddress)
+          .then((nftResp) => {
+            console.log("SUCCESS");
+            statusCode = 200;
+            body = JSON.stringify(nftResp);
+          })
+          .catch((err) => {
             statusCode = 400;
-            body = "User Already Exists";
-          }
-        }
+            body = JSON.stringify(err);
+          });
       } else {
-        break;
+        statusCode = 400;
+        body = "User Already Exists";
       }
+    } else {
+      statusCode = 500;
+      body = { err: "No Data Returned" };
+    }
   }
   return {
     statusCode,
@@ -151,10 +129,14 @@ function checkForWalletId(walletId) {
         let imageurl = data[i];
         let endString = imageurl.indexOf(".jpg");
         let itemWalletId = imageurl.substr(8, endString - 8);
-        if (itemWalletId.toLowerCase() === walletId.toLowerCase()) {
-          walletUsed = true;
-          resolve(true);
-          break;
+        if (itemWalletId === "undefined") {
+          resolve(false);
+        } else {
+          if (itemWalletId.toLowerCase() === walletId.toLowerCase()) {
+            walletUsed = true;
+            resolve(true);
+            break;
+          }
         }
       }
       resolve(false);
@@ -215,21 +197,3 @@ function mintNft(imageUrl, walletAddress) {
     .post("https://api.nftport.xyz/v0/mints/easy/urls", body, headers)
     .then(({ data }) => data)
     .catch((err) => err);
-
-  /*
-  const customPromise = new Promise((resolve, reject) => {
-    sdk.auth(NFTPORT_AUTHKEY);
-    sdk
-      .easyMintingUrls({
-        chain: "polygon",
-        name: "Happy Holidays NFT Just For You!",
-        description:
-          "A special holiday NFT for you from your friend Jeremy Mack!",
-        file_url: imageUrl,
-        mint_to_address: walletAddress,
-      })
-      .then(({ data }) => resolve(data))
-      .catch((err) => reject(err));
-  });
-  return customPromise;*/
-}
