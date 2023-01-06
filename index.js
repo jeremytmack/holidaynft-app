@@ -20,7 +20,7 @@ exports.handler = async (event, context) => {
   //console.log("ISSUED GET: ", JSON.stringify(event));
   const httpMethod = event.httpMethod;
   let statusCode = 400;
-  let body = `User Exists`;
+  let body = JSON.stringify({ error: "User Exists" });
 
   const headers = {
     "Content-Type": "application/json",
@@ -36,7 +36,7 @@ exports.handler = async (event, context) => {
         body = JSON.stringify(data);
       })
       .catch((err) => {
-        body = JSON.stringify(err);
+        body = JSON.stringify({ error: err });
         statusCode = 400;
       });
   } else if (String(httpMethod) === "POST") {
@@ -56,27 +56,26 @@ exports.handler = async (event, context) => {
           return `https://holidaynft.s3.amazonaws.com/${nftImageUrl}`;
         })
         .catch((err) => {
-          return "";
+          return JSON.stringify({ err: err });
         });
 
       if (fullImageUrl.length !== "") {
         let bodyData = await mintNft(fullImageUrl, walletAddress)
           .then((nftResp) => {
-            console.log("SUCCESS");
             statusCode = 200;
             body = JSON.stringify(nftResp);
           })
           .catch((err) => {
             statusCode = 400;
-            body = JSON.stringify(err);
+            body = JSON.stringify({ error: err });
           });
       } else {
         statusCode = 400;
-        body = "User Already Exists";
+        body = JSON.stringify({ error: "User Already Exists" });
       }
     } else {
-      statusCode = 500;
-      body = { err: "No Data Returned" };
+      statusCode = 400;
+      body = JSON.stringify({ error: "User Already Exists" });
     }
   }
   return {
@@ -197,3 +196,4 @@ function mintNft(imageUrl, walletAddress) {
     .post("https://api.nftport.xyz/v0/mints/easy/urls", body, headers)
     .then(({ data }) => data)
     .catch((err) => err);
+}
